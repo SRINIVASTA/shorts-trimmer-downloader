@@ -100,16 +100,18 @@ if download_btn and youtube_url:
             st.error("Audio processing track crashed.")
             st.stop()
 
-    # --- Processing Layer 2: Video Cropping via native FFmpeg ---
-    with st.spinner("Executing vertical aspect crops..."):
+    # --- Processing Layer 2: Video Cropping & Audio Re-muxing via native FFmpeg ---
+    with st.spinner("Executing vertical crops and merging audio back in..."):
         try:
             subprocess.run([
-                FFMPEG_CMD, "-i", video_filename, "-an", "-filter:v",
-                "crop=in_w:in_h-200:0:0", "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                FFMPEG_CMD, "-i", video_filename, 
+                "-filter:v", "crop=in_w:in_h-200:0:0", # Crops 200 pixels off the height
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-c:a", "aac", "-b:a", "192k", # Re-encodes the clean audio right into the file
                 cropped_video, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
-            st.error("Video cropping filter pipeline failed.")
+            st.error("Video processing filter pipeline failed.")
             st.stop()
 
     st.success("🎉 Processing complete!")
