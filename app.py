@@ -1,164 +1,108 @@
 import os
 import subprocess
 import streamlit as st
-import yt_dlp
+import requests
 
-# 'ffmpeg' is globally provided via your repository's packages.txt file
 FFMPEG_CMD = "ffmpeg"
 
 st.set_page_config(page_title="Shorts Downloader", layout="centered")
-st.title("▶ YouTube Shorts Downloader")
-st.caption("Production-Ready Streamlit Cloud Native Architecture")
+st.title("▶ YouTube Shorts Downloader (No Cookies Required)")
+st.caption("Using Public Extraction Gateways to Bypass Cloud Blocks")
 
-# Sidebar Workspace Configuration
-st.sidebar.header("🔑 Authentication & Inputs")
-
-# --- Step-by-Step Guide for Users ---
-with st.sidebar.expander("ℹ️ How to get your cookies.txt"):
-    st.markdown("""
-    1. Install the browser extension **'Get cookies.txt LOCALLY'** (Chrome/Firefox).
-    2. Open a **New Incognito / Private Window**.
-    3. Go to **YouTube.com** and log into your account.
-    4. Click the extension icon and select **'Export As'** to save the text file.
-    5. **Important:** Close the Incognito window immediately without clicking anything else on YouTube (this prevents session keys from rotating).
-    """)
-
-uploaded_cookies = st.sidebar.file_uploader(
-    "Upload your YouTube cookies.txt file:", 
-    type=["txt"]
-)
-youtube_url = st.sidebar.text_input("Enter YouTube Shorts URL:")
-download_btn = st.sidebar.button("Download & Process")
+youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
+download_btn = st.button("Download & Process Video")
 
 if download_btn and youtube_url:
-    # Handle mandatory data-center verification check with clear UI feedback
-    if uploaded_cookies is None:
-        st.error("⚠️ **Authentication Required:** YouTube blocks shared cloud hosting IP addresses. Please follow the sidebar instructions to upload a valid `cookies.txt` file to run this request.")
+    # Extract the unique 11-character video ID from the URL
+    video_id = None
+    if "shorts/" in youtube_url:
+        video_id = youtube_url.split("shorts/")[1].split("?")[0].split("/")[0]
+    elif "v=" in youtube_url:
+        video_id = youtube_url.split("v=")[1].split("&")[0]
+    
+    if not video_id or len(video_id) != 11:
+        st.error("❌ Invalid YouTube URL format. Please paste a valid Shorts link.")
         st.stop()
-        
-    # Write cookies binary stream directly to a protected temporary storage path
-    cookie_path = "/tmp/cookies.txt"
-    if os.path.exists(cookie_path):
-        os.remove(cookie_path)
-        
-    with open(cookie_path, "wb") as f:
-        f.write(uploaded_cookies.getbuffer())
-    st.sidebar.success("Session tokens injected!")
 
-    # Establish deterministic filename templates using static IDs to prevent multi-user collisions
-    video_id = "downloaded_video"
+    # Define working file paths
     video_filename = f"/tmp/{video_id}.mp4"
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
-    subtitle_tmpl = f"/tmp/{video_id}_sub"
 
-    # Deep clean working folder layers before parsing new streams
+    # Clean up old files
     for path in [video_filename, audio_file, cropped_video]:
         if os.path.exists(path):
             os.remove(path)
 
-    # --- Consolidated yt-dlp Configuration Block ---
-    ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'merge_output_format': 'mp4',
-        'geo_bypass': True,
-        'quiet': True,
-        'cookiefile': cookie_path, # Injects authentication directly into the primary handshake
-        
-        'outtmpl': {
-            'default': video_filename,
-            'subtitle': f"{subtitle_tmpl}.%(ext)s"
-        },
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitleslangs': ['en'],
-
-        # Bypasses hardware DRM restrictions and bot traps by disabling iOS/TV spoof profiles
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['web', 'web_embedded', 'android_embed'],
-                'skip': ['dash', 'hls']
-            }
-        },
-        
-        # Emulates vanilla desktop browser interactions
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Sec-Fetch-Mode': 'navigate',
-        }
-    }
-
-    video_title = "Shorts_Video"
-    with st.spinner("Passing bot checks and fetching streams from YouTube..."):
+    # --- Step 1: Download via Cobalt Public API Gateway ---
+    # Cobalt is an open-source, cookie-free API engine that handles infrastructure blocks
+    with st.spinner("Routing stream through public gateway..."):
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(youtube_url, download=True)
-                raw_title = info.get('title', 'Shorts_Video')
-                video_title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).rstrip()
+            api_url = "https://cobalt.tools"
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "url": youtube_url,
+                "videoQuality": "720", # Optimized for fast cloud processing
+                "filenamePattern": "basic"
+            }
+            
+            response = requests.post(api_url, json=payload, headers=headers)
+            res_data = response.json()
+            
+            if res_data.get("status") == "stream" or res_data.get("status") == "redirect":
+                download_stream_url = res_data.get("url")
+            else:
+                raise Exception(res_data.get("text", "Unknown API error"))
+
+            # Stream the file down to your Streamlit storage layer
+            file_response = requests.get(download_stream_url, stream=True)
+            with open(video_filename, "wb") as f:
+                for chunk in file_response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    
         except Exception as e:
-            st.error(f"Download execution failed: {e}")
-            if "Sign in to confirm you’re not a bot" in str(e):
-                st.info("💡 **Tip:** Your uploaded cookie file might have expired. Try exporting a new one from an fresh Incognito window.")
-            if os.path.exists(cookie_path):
-                os.remove(cookie_path)
+            st.error(f"Gateway download failed: {e}. The public node might be overloaded.")
             st.stop()
 
-    # --- Processing Layer 1: Audio Extraction ---
-    with st.spinner("Extracting audio stream..."):
+    # --- Step 2: Extract Audio Track via FFmpeg ---
+    with st.spinner("Extracting audio track..."):
         try:
             subprocess.run([
                 FFMPEG_CMD, "-i", video_filename, "-q:a", "0", "-map", "a", audio_file, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            st.error("Audio demuxer failed to extract track asset.")
+        except subprocess.CalledProcessError:
+            st.error("Audio conversion failed.")
             st.stop()
 
-    # --- Processing Layer 2: Video Cropping Filter ---
-    with st.spinner("Applying vertical crop filters..."):
+    # --- Step 3: Vertical Video Crop via FFmpeg ---
+    with st.spinner("Applying crop adjustments..."):
         try:
             subprocess.run([
                 FFMPEG_CMD, "-i", video_filename, "-an", "-filter:v",
                 "crop=in_w:in_h-200:0:0", "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 cropped_video, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            st.error("FFmpeg filter graph processing step failed.")
+        except subprocess.CalledProcessError:
+            st.error("Video processing filter pipeline failed.")
             st.stop()
 
-    st.success("🎉 Processing complete!")
+    st.success("🎉 Processing complete without cookies!")
 
-    # --- Content Presentation Layout ---
+    # --- UI Layout Rendering ---
     st.subheader("🎞️ Original Video Track")
     st.video(video_filename)
     with open(video_filename, "rb") as f:
-        st.download_button("⬇️ Download Original Video", f, file_name=f"{video_title}.mp4")
+        st.download_button("⬇️ Download Original Video", f, file_name=f"{video_id}.mp4")
 
     st.subheader("▶ Cropped Video Frame (Muted)")
     st.video(cropped_video)
     with open(cropped_video, "rb") as f:
-        st.download_button("⬇️ Download Cropped Video", f, file_name=f"{video_title}_cropped.mp4")
+        st.download_button("⬇️ Download Cropped Video", f, file_name=f"{video_id}_cropped.mp4")
 
-    st.subheader("🎵 High-Quality Audio Extract")
+    st.subheader("🎵 Extracted Audio Track")
     st.audio(audio_file)
     with open(audio_file, "rb") as f:
-        st.download_button("⬇️ Download Audio Track", f, file_name=f"{video_title}.mp3")
-
-    # --- Subtitle Discovery Block ---
-    sub_files = [f for f in os.listdir("/tmp") if f.startswith(video_id) and f.endswith(('.vtt', '.srt', '.ass'))]
-    if sub_files:
-        st.subheader("💬 Available Text Captions")
-        for sub_file in sub_files:
-            sub_path = os.path.join("/tmp", sub_file)
-            ext = os.path.splitext(sub_file)[1]
-            with open(sub_path, "rb") as f:
-                st.download_button(
-                    f"⬇️ Download Subtitle ({ext.replace('.', '').upper()})", 
-                    f, 
-                    file_name=f"{video_title}{ext}"
-                )
-
-    # Privacy safety: wipe cookie file data at execution finish
-    if os.path.exists(cookie_path):
-        os.remove(cookie_path)
+        st.download_button("⬇️ Download Audio", f, file_name=f"{video_id}.mp3")
