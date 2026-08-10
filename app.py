@@ -11,18 +11,29 @@ st.title("▶ YouTube Shorts Downloader")
 st.caption("Production-Ready Streamlit Cloud Native Architecture")
 
 # Sidebar Workspace Configuration
-st.sidebar.header("Authentication & Inputs")
+st.sidebar.header("🔑 Authentication & Inputs")
+
+# --- Step-by-Step Guide for Users ---
+with st.sidebar.expander("ℹ️ How to get your cookies.txt"):
+    st.markdown("""
+    1. Install the browser extension **'Get cookies.txt LOCALLY'** (Chrome/Firefox).
+    2. Open a **New Incognito / Private Window**.
+    3. Go to **YouTube.com** and log into your account.
+    4. Click the extension icon and select **'Export As'** to save the text file.
+    5. **Important:** Close the Incognito window immediately without clicking anything else on YouTube (this prevents session keys from rotating).
+    """)
+
 uploaded_cookies = st.sidebar.file_uploader(
-    "Upload YouTube cookies.txt (MANDATORY for Cloud Hosting)", 
+    "Upload your YouTube cookies.txt file:", 
     type=["txt"]
 )
 youtube_url = st.sidebar.text_input("Enter YouTube Shorts URL:")
 download_btn = st.sidebar.button("Download & Process")
 
 if download_btn and youtube_url:
-    # Handle mandatory data-center verification check
+    # Handle mandatory data-center verification check with clear UI feedback
     if uploaded_cookies is None:
-        st.error("❌ YouTube blocks shared cloud hosting IP addresses. You MUST upload a valid cookies.txt file to authenticate this session.")
+        st.error("⚠️ **Authentication Required:** YouTube blocks shared cloud hosting IP addresses. Please follow the sidebar instructions to upload a valid `cookies.txt` file to run this request.")
         st.stop()
         
     # Write cookies binary stream directly to a protected temporary storage path
@@ -48,14 +59,12 @@ if download_btn and youtube_url:
 
     # --- Consolidated yt-dlp Configuration Block ---
     ydl_opts = {
-        # Fallback query strings ensuring a valid mp4 layer downloads even on split streams
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'merge_output_format': 'mp4',
         'geo_bypass': True,
         'quiet': True,
         'cookiefile': cookie_path, # Injects authentication directly into the primary handshake
         
-        # Maps downloads and subtitle files dynamically inside a single request pass
         'outtmpl': {
             'default': video_filename,
             'subtitle': f"{subtitle_tmpl}.%(ext)s"
@@ -86,12 +95,12 @@ if download_btn and youtube_url:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(youtube_url, download=True)
-                # Sanitize the video title to guarantee clean disk writing
                 raw_title = info.get('title', 'Shorts_Video')
                 video_title = "".join(c for c in raw_title if c.isalnum() or c in (' ', '_', '-')).rstrip()
         except Exception as e:
             st.error(f"Download execution failed: {e}")
-            # Security sweep: destroy cookie references on download crash
+            if "Sign in to confirm you’re not a bot" in str(e):
+                st.info("💡 **Tip:** Your uploaded cookie file might have expired. Try exporting a new one from an fresh Incognito window.")
             if os.path.exists(cookie_path):
                 os.remove(cookie_path)
             st.stop()
