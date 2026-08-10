@@ -1,50 +1,14 @@
 import os
-import stat
 import subprocess
 import streamlit as st
 import yt_dlp
 
-FFMPEG_PATH = "/tmp/ffmpeg"
-
-def download_ffmpeg():
-    if os.path.isfile(FFMPEG_PATH):
-        return
-    
-    # FIX: Using the explicit, permanent, direct versioned download link
-    url = "https://johnvansickle.com"
-    tar_path = "/tmp/ffmpeg.tar.xz"
-    
-    st.sidebar.info("Downloading ffmpeg binary (~30MB)...")
-    
-    # Added -f (fail silently) and -sS to curl for cleaner errors if network drops
-    subprocess.run(["curl", "-L", "-f", url, "-o", tar_path], check=True)
-    
-    # Extracts directly without needing to guess the inner folder name dynamically
-    subprocess.run(["tar", "-xf", tar_path, "-C", "/tmp"], check=True)
-    os.remove(tar_path)  # Cleanup tar file
-
-    # Match the explicit folder name created by version 6.1
-    extracted_dir = "/tmp/ffmpeg-6.1-amd64-static"
-    if not os.path.isdir(extracted_dir):
-        st.sidebar.error("Failed to find extracted ffmpeg directory structure.")
-        st.stop()
-
-    src_ffmpeg = os.path.join(extracted_dir, "ffmpeg")
-    if not os.path.isfile(src_ffmpeg):
-        st.sidebar.error("ffmpeg binary not found inside extracted archive.")
-        st.stop()
-
-    os.rename(src_ffmpeg, FFMPEG_PATH)
-    os.chmod(FFMPEG_PATH, stat.S_IRWXU)  # Make executable
-    st.sidebar.success("ffmpeg downloaded and ready.")
-
-def get_ffmpeg_dir():
-    return os.path.dirname(FFMPEG_PATH)
+# 'ffmpeg' is now a globally available system command
+FFMPEG_CMD = "ffmpeg"
 
 st.title("▶ YouTube Shorts Downloader")
 
-download_ffmpeg()
-
+# Sidebar Inputs
 st.sidebar.header("Input Options")
 uploaded_cookies = st.sidebar.file_uploader("Upload your YouTube cookies.txt (optional)", type=["txt"])
 youtube_url = st.sidebar.text_input("Enter YouTube Shorts URL:")
@@ -58,25 +22,25 @@ if download_btn and youtube_url:
             f.write(uploaded_cookies.getbuffer())
         st.sidebar.success("Cookies uploaded!")
 
-    # Fetch info first to get a safe, unique ID for file mapping
+    # --- Step 0: Get Unique Metadata ---
     with st.spinner("Extracting video metadata..."):
         try:
-            with yt_dlp.YoutubeDL({'cookiefile': cookie_path} if cookie_path else {}) as ydl:
+            ydl_meta_opts = {'cookiefile': cookie_path} if cookie_path else {}
+            with yt_dlp.YoutubeDL(ydl_meta_opts) as ydl:
                 info = ydl.extract_info(youtube_url, download=False)
                 video_id = info.get('id', 'default_id')
-                video_title = info.get('title', 'video')
+                video_title = info.get('title', 'Shorts_Video')
         except Exception as e:
-            st.error(f"Failed to fetch video info: {e}")
+            st.error(f"Failed to fetch video information: {e}")
             st.stop()
 
-    # Define unique absolute paths based on video ID
-    base_path = f"/tmp/{video_id}"
-    video_filename = f"{base_path}.mp4"
-    audio_file = f"{base_path}_audio.mp3"
-    cropped_video = f"{base_path}_cropped.mp4"
-    subtitle_tmpl = f"{base_path}_sub"
+    # Create safe unique file paths using the ID to prevent concurrent user overlaps
+    video_filename = f"/tmp/{video_id}.mp4"
+    audio_file = f"/tmp/{video_id}_audio.mp3"
+    cropped_video = f"/tmp/{video_id}_cropped.mp4"
+    subtitle_tmpl = f"/tmp/{video_id}_sub"
 
-    # --- 1. Download subtitles ---
+    # --- Step 1: Download subtitles only ---
     subtitle_opts = {
         'writesubtitles': True,
         'writeautomaticsub': True,
@@ -88,19 +52,17 @@ if download_btn and youtube_url:
     if cookie_path:
         subtitle_opts['cookiefile'] = cookie_path
 
-    with st.spinner("Searching for subtitles..."):
-        try:
-            with yt_dlp.YoutubeDL(subtitle_opts) as ydl:
-                ydl.download([youtube_url])
-        except Exception as e:
-            st.warning(f"Subtitle processing skipped: {e}")
+    try:
+        with yt_dlp.YoutubeDL(subtitle_opts) as ydl:
+            ydl.download([youtube_url])
+    except Exception as e:
+        pass  # Fail gracefully if video has no subtitles
 
-    # --- 2. Download video & audio ---
+    # --- Step 2: Download video & audio ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best',
         'merge_output_format': 'mp4',
         'outtmpl': video_filename,
-        'ffmpeg_location': get_ffmpeg_dir(),
         'geo_bypass': True,
         'quiet': True,
     }
@@ -115,29 +77,29 @@ if download_btn and youtube_url:
             st.error(f"Download error: {e}")
             st.stop()
 
-    # --- 3. Process Audio ---
+    # --- Step 3: Extract Audio via System FFmpeg ---
     with st.spinner("Extracting audio path..."):
         try:
             subprocess.run([
-                FFMPEG_PATH, "-i", video_filename, "-q:a", "0", "-map", "a", audio_file, "-y"
+                FFMPEG_CMD, "-i", video_filename, "-q:a", "0", "-map", "a", audio_file, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError as e:
-            st.error(f"Audio extraction failed: {e}")
+            st.error("Audio extraction pipeline failed.")
             st.stop()
 
-    # --- 4. Process Cropped Video ---
+    # --- Step 4: Crop Video via System FFmpeg ---
     with st.spinner("Cropping video borders..."):
         try:
             subprocess.run([
-                FFMPEG_PATH, "-i", video_filename, "-an", "-filter:v",
+                FFMPEG_CMD, "-i", video_filename, "-an", "-filter:v",
                 "crop=in_w:in_h-200:0:0", "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 cropped_video, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError as e:
-            st.error(f"Video cropping failed: {e}")
+            st.error("Video cropping filter pipeline failed.")
             st.stop()
 
-    st.success("🎉 All processes complete!")
+    st.success("🎉 Processing complete!")
 
     # --- Layout Displays ---
     st.subheader("🎞️ Original Video")
@@ -155,7 +117,7 @@ if download_btn and youtube_url:
     with open(audio_file, "rb") as f:
         st.download_button("⬇️ Download Audio", f, file_name=f"{video_title}.mp3")
 
-    # --- Subtitle display logic using deterministic naming ---
+    # --- Subtitles ---
     sub_files = [f for f in os.listdir("/tmp") if f.startswith(f"{video_id}_sub") and f.endswith(('.vtt', '.srt', '.ass'))]
     if sub_files:
         st.subheader("💬 Available Subtitles")
@@ -163,6 +125,4 @@ if download_btn and youtube_url:
             sub_path = os.path.join("/tmp", sub_file)
             ext = os.path.splitext(sub_file)[1]
             with open(sub_path, "rb") as f:
-                st.download_button(f"⬇️ Download Subtitle ({ext.upper()})", f, file_name=f"{video_title}{ext}")
-    else:
-        st.info("No English subtitles found for this asset.")
+                st.download_button(f"⬇️ Download Subtitle ({ext.replace('.', '').upper()})", f, file_name=f"{video_title}{ext}")
