@@ -2,79 +2,70 @@ import os
 import re
 import subprocess
 import streamlit as st
-import requests
+import yt_dlp
 
+# 'ffmpeg' is globally provided via your repository's packages.txt file
 FFMPEG_CMD = "ffmpeg"
 
 st.set_page_config(page_title="Shorts Downloader", layout="centered")
 st.title("▶ YouTube Shorts Downloader")
-st.caption("Resilient Community Network Engine")
+st.caption("Production-Ready Streamlit Cloud Native Architecture")
 
+# Workspace Controls
 youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
 if download_btn and youtube_url:
-    # --- Bulletproof Regex Video ID Extraction ---
+    # --- Robust Regex Video ID Extraction ---
     video_id = None
-    
-    # Matches the exact 11 characters of any standard YouTube ID format
     regex_pattern = r"(?:v=|\/v\/|youtu\.be\/|\/shorts\/|^)([a-zA-Z0-9_-]{11})"
     match = re.search(regex_pattern, youtube_url)
     
     if match:
         video_id = match.group(1)
 
-    # Strictly validate the isolated identifier format rules
-    if not video_id or len(video_id) != 11:
-        st.error(f"❌ Invalid YouTube URL format. Could not parse the 11-character video ID correctly from: {youtube_url}")
+    if not video_id:
+        st.error("❌ Invalid YouTube URL format. Could not parse video ID.")
         st.stop()
 
-    # Define processing tracking variables
+    # Define unique file names to completely avoid string concatenation bugs
     video_filename = f"/tmp/{video_id}.mp4"
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
 
-    # Clean working directory tracks
+    # Clean working directory files
     for path in [video_filename, audio_file, cropped_video]:
         if os.path.exists(path):
             os.remove(path)
 
-    # --- Fetching via Distributed Piped API Node ---
-    api_url = f"https://kavin.rocks{video_id}"
-    
-    with st.spinner("Streaming public data stream packets..."):
-        try:
-            response = requests.get(api_url, timeout=15)
-            
-            if response.status_code != 200:
-                raise Exception(f"API server responded with error code {response.status_code}")
-                
-            res_data = response.json()
-            
-            # Find the best unencrypted MP4 video track stream link inside the payload array
-            video_streams = [
-                stream for stream in res_data.get("videoStreams", []) 
-                if stream.get("videoOnly") is False and stream.get("mimeType") == "video/mp4"
-            ]
-            
-            if not video_streams:
-                video_streams = [s for s in res_data.get("videoStreams", []) if s.get("mimeType") == "video/mp4"]
-                
-            if not video_streams:
-                raise Exception("No unencrypted MP4 streams were uncovered for this asset link.")
-                
-            # Grab the highest quality format index link available
-            download_stream_url = video_streams[0].get("url")
+    # --- Consolidated yt-dlp Configuration Block ---
+    # This bypasses blocks natively without third-party web scraper tools
+    ydl_opts = {
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'merge_output_format': 'mp4',
+        'outtmpl': video_filename,
+        'geo_bypass': True,
+        'quiet': True,
+        
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['web', 'web_embedded', 'android_embed'],
+                'skip': ['dash', 'hls']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+    }
 
-            # Stream download chunks directly down into local Streamlit container memory
-            file_response = requests.get(download_stream_url, stream=True, timeout=30)
-            with open(video_filename, "wb") as f:
-                for chunk in file_response.iter_content(chunk_size=16384):
-                    if chunk:
-                        f.write(chunk)
-                        
+    with st.spinner("Downloading video assets directly from YouTube..."):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([youtube_url])
         except Exception as e:
-            st.error(f"❌ Extraction Gateway Failure: {e}")
+            st.error(f"Download execution failed: {e}")
             st.stop()
 
     # --- Processing Layer 1: Audio Extract via native FFmpeg ---
@@ -84,11 +75,11 @@ if download_btn and youtube_url:
                 FFMPEG_CMD, "-i", video_filename, "-q:a", "0", "-map", "a", audio_file, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
-            st.error("Audio demux processing track crashed.")
+            st.error("Audio processing track crashed.")
             st.stop()
 
     # --- Processing Layer 2: Video Cropping via native FFmpeg ---
-    with st.spinner("Executing top and bottom aspect crops..."):
+    with st.spinner("Executing vertical aspect crops..."):
         try:
             subprocess.run([
                 FFMPEG_CMD, "-i", video_filename, "-an", "-filter:v",
@@ -96,10 +87,10 @@ if download_btn and youtube_url:
                 cropped_video, "-y"
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
-            st.error("Video processing filter pipeline failed.")
+            st.error("Video cropping filter pipeline failed.")
             st.stop()
 
-    st.success("🎉 Processing complete without cookies!")
+    st.success("🎉 Processing complete!")
 
     # --- UI Asset Display Layout Panels ---
     st.subheader("🎞️ Original Track File")
