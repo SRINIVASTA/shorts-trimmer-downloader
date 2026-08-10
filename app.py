@@ -8,11 +8,11 @@ import yt_dlp
 # 'ffmpeg' is globally provided via your repository's packages.txt file
 FFMPEG_CMD = "ffmpeg"
 
-st.set_page_config(page_title="Shorts Downloader", layout="centered")
+st.set_page_config(page_title="Local Shorts Downloader", layout="centered")
 st.title("▶ YouTube Shorts Downloader")
-st.caption("Production-Ready Streamlit Cloud Native Architecture")
+st.caption("Optimized for Residential Networks — No Cookies Required")
 
-# Simple Web Workspace Input Control
+# Workspace Controls
 youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
@@ -29,17 +29,6 @@ if download_btn and youtube_url:
         st.error("❌ Invalid YouTube URL format. Could not parse video ID.")
         st.stop()
 
-    # Create a temporary file path to handle your hidden secrets securely
-    cookie_path = "/tmp/app_cookies.txt"
-    
-    # Reads the credentials you pasted into the Streamlit Web Settings panel
-    if "YOUTUBE_COOKIES" in st.secrets:
-        with open(cookie_path, "w", encoding="utf-8") as f:
-            f.write(st.secrets["YOUTUBE_COOKIES"])
-    else:
-        st.error("❌ **Configuration Error:** Please add your exported `cookies.txt` content to your Streamlit App Secrets under the key `YOUTUBE_COOKIES` in your Streamlit web dashboard.")
-        st.stop()
-
     # Pre-clean matching files in directory to prevent container conflicts
     for old_file in glob.glob(f"/tmp/{video_id}*"):
         try:
@@ -52,35 +41,37 @@ if download_btn and youtube_url:
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
 
-    # --- Robust yt-dlp Configuration Block ---
+    # --- Resident Network yt-dlp Configuration Block ---
+    # FIX: Bypasses the bot check by mimicking a vanilla web browser player
     ydl_opts = {
+        'format': 'best', # Pulls pre-merged stream to avoid extra handshakes
         'outtmpl': base_download_tmpl,
         'geo_bypass': True,
         'quiet': True,
         'nocheckcertificate': True,
-        'cookiefile': cookie_path, # Automatically authenticates the cloud server via your secret tokens
         
+        # CRITICAL FIX: Tells YouTube you are using a desktop browser client, not an automated app
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'web_embedded', 'android_embed'],
-                'skip': ['dash', 'hls']
+                'player_client': ['web', 'web_embedded'],
+                'skip': ['dash', 'hls'] # Skips streaming chunks prone to bot-checks
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
         }
     }
 
-    with st.spinner("Authenticating cloud session and downloading video assets..."):
+    with st.spinner("Downloading video track using browser emulation..."):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([youtube_url])
         except Exception as e:
             st.error(f"Download execution failed: {e}")
-            if os.path.exists(cookie_path):
-                os.remove(cookie_path)
+            st.info("💡 If this fails on your resident network, make sure to reboot the app in the Streamlit panel to clear old connection tokens.")
             st.stop()
 
     # Find the real downloaded video path dynamically
@@ -88,9 +79,7 @@ if download_btn and youtube_url:
     downloaded_files = [f for f in downloaded_files if not f.endswith(('_audio.mp3', '_cropped.mp4'))]
 
     if not downloaded_files:
-        st.error("❌ Media stream was dropped or could not be saved to cloud disk storage.")
-        if os.path.exists(cookie_path):
-            os.remove(cookie_path)
+        st.error("❌ Media stream was dropped or could not be saved to disk storage.")
         st.stop()
         
     video_filename = downloaded_files[0]
@@ -117,7 +106,7 @@ if download_btn and youtube_url:
             st.error("Video cropping filter pipeline failed.")
             st.stop()
 
-    st.success("🎉 Processing complete inside the web container!")
+    st.success("🎉 Processing complete!")
 
     # --- UI Asset Display Layout Panels ---
     st.subheader("╠ Original Track File")
@@ -134,7 +123,3 @@ if download_btn and youtube_url:
     st.audio(audio_file)
     with open(audio_file, "rb") as f:
         st.download_button("⬇️ Download Audio Track", f, file_name=f"audio_{video_id}.mp3")
-
-    # Wipe temporary cookie storage file tracking for privacy safety
-    if os.path.exists(cookie_path):
-        os.remove(cookie_path)
