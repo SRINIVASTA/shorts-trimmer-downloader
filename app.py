@@ -2,31 +2,44 @@ import os
 import subprocess
 import streamlit as st
 import requests
+from urllib.parse import urlparse, parse_qs
 
 FFMPEG_CMD = "ffmpeg"
 
 st.set_page_config(page_title="Shorts Downloader", layout="centered")
-st.title("▶ YouTube Shorts Downloader (Resilient API Engine)")
-st.caption("Using distributed community networks to process tracks cleanly")
+st.title("▶ YouTube Shorts Downloader")
+st.caption("Resilient Community Network Engine")
 
 youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
 if download_btn and youtube_url:
-    # Safely isolate the 11-character video ID from the text string
+    # --- Robust Video ID Extraction Logic ---
     video_id = None
-    if "shorts/" in youtube_url:
-        video_id = youtube_url.split("shorts/")[-1].split("?")[0].split("/")[0]
-    elif "v=" in youtube_url:
-        video_id = youtube_url.split("v=")[-1].split("&")[0]
-    elif "youtu.be/" in youtube_url:
-        video_id = youtube_url.split("youtu.be/")[-1].split("?")[0]
-        
+    try:
+        parsed_url = urlparse(youtube_url)
+        # Handle shorts paths, standard watch paths, and short URLs cleanly
+        if "shorts" in parsed_url.path:
+            # Splits path like /shorts/GlBi3knFeQI into segments and takes the last item
+            video_id = [seg for seg in parsed_url.path.split('/') if seg][-1]
+        elif parsed_url.netloc in ["://youtube.com", "youtube.com"] and parsed_url.path == "/watch":
+            video_id = parse_qs(parsed_url.query).get("v", [None])[0]
+        elif parsed_url.netloc == "youtu.be":
+            video_id = [seg for seg in parsed_url.path.split('/') if seg][0]
+            
+        # Clean any trailing query parameters left behind by string extraction
+        if video_id and "?" in video_id:
+            video_id = video_id.split("?")[0]
+            
+    except Exception:
+        pass
+
+    # Strictly validate the isolated identifier format rules
     if not video_id or len(video_id) != 11:
-        st.error("❌ Invalid YouTube URL format. Please supply a valid 11-character video link.")
+        st.error(f"❌ Invalid YouTube URL format. Could not parse video ID correctly from: {youtube_url}")
         st.stop()
 
-    # Define processing variables
+    # Define processing tracking variables
     video_filename = f"/tmp/{video_id}.mp4"
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
@@ -37,10 +50,11 @@ if download_btn and youtube_url:
             os.remove(path)
 
     # --- Fetching via Distributed Piped API Node ---
-    with st.spinner("Streaming data stream from public mesh..."):
+    # The URL string configuration is now perfectly locked down and isolated
+    api_url = f"https://kavin.rocks{video_id}"
+    
+    with st.spinner("Streaming public data stream packets..."):
         try:
-            # Direct API request structure using a stable default node mapping layer
-            api_url = f"https://kavin.rocks{video_id}"
             response = requests.get(api_url, timeout=15)
             
             if response.status_code != 200:
@@ -55,11 +69,10 @@ if download_btn and youtube_url:
             ]
             
             if not video_streams:
-                # Fallback to absolute standard format if preferred array filter checks empty
                 video_streams = [s for s in res_data.get("videoStreams", []) if s.get("mimeType") == "video/mp4"]
                 
             if not video_streams:
-                raise Exception("No processable unencrypted MP4 streams were uncovered for this Short asset.")
+                raise Exception("No unencrypted MP4 streams were uncovered for this asset link.")
                 
             # Grab the highest quality format index link available
             download_stream_url = video_streams[0].get("url")
@@ -72,7 +85,7 @@ if download_btn and youtube_url:
                         f.write(chunk)
                         
         except Exception as e:
-            st.error(f"❌ Extraction Gateway Failure: {e}. Please ensure the Short is fully public and try again.")
+            st.error(f"❌ Extraction Gateway Failure: {e}")
             st.stop()
 
     # --- Processing Layer 1: Audio Extract via native FFmpeg ---
@@ -100,7 +113,7 @@ if download_btn and youtube_url:
     st.success("🎉 Processing complete without cookies!")
 
     # --- UI Asset Display Layout Panels ---
-    st.subheader("╠ Original Track File")
+    st.subheader("🎞️ Original Track File")
     st.video(video_filename)
     with open(video_filename, "rb") as f:
         st.download_button("⬇️ Download Original Video", f, file_name=f"original_{video_id}.mp4")
