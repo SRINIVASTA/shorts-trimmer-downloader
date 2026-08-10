@@ -1,5 +1,6 @@
 import os
 import re
+import glob
 import subprocess
 import streamlit as st
 import yt_dlp
@@ -28,25 +29,27 @@ if download_btn and youtube_url:
         st.error("❌ Invalid YouTube URL format. Could not parse video ID.")
         st.stop()
 
-    # Define clean working absolute file paths 
-    video_filename = f"/tmp/{video_id}.mp4"
+    # Pre-clean matching files in directory to prevent container permission locks
+    for old_file in glob.glob(f"/tmp/{video_id}*"):
+        try:
+            os.remove(old_file)
+        except Exception:
+            pass
+
+    # Dynamic fallback output paths
+    base_download_tmpl = f"/tmp/{video_id}.%(ext)s"
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
 
-    # Clean working directory files to prevent container permission locks
-    for path in [video_filename, audio_file, cropped_video]:
-        if os.path.exists(path):
-            os.remove(path)
-
     # --- Robust yt-dlp Configuration Block ---
-    # FIX: We drop format/merge constraints entirely to avoid the 'Format not available' trap.
+    # FIX: Uses dynamic extensions to bypass format selection locks completely
     ydl_opts = {
-        'outtmpl': video_filename,
+        'outtmpl': base_download_tmpl,
         'geo_bypass': True,
         'quiet': True,
         'nocheckcertificate': True,
         
-        # Bypasses hardware restrictions safely by using default web-client handshakes
+        # Pulls clean web interaction streams instead of restricted hardware streams
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'web_embedded', 'android_embed'],
@@ -66,13 +69,18 @@ if download_btn and youtube_url:
                 ydl.download([youtube_url])
         except Exception as e:
             st.error(f"Download execution failed: {e}")
-            st.info("💡 Tip: If this continues, ensure your requirements.txt is up to date.")
             st.stop()
 
-    # Verify the video file actually downloaded before invoking FFmpeg
-    if not os.path.exists(video_filename):
+    # --- Find the real downloaded video path dynamically ---
+    downloaded_files = glob.glob(f"/tmp/{video_id}.*")
+    # Exclude any files we are about to create if they exist
+    downloaded_files = [f for f in downloaded_files if not f.endswith(('_audio.mp3', '_cropped.mp4'))]
+
+    if not downloaded_files:
         st.error("❌ Media stream was dropped or could not be saved to storage disk.")
         st.stop()
+        
+    video_filename = downloaded_files[0] # This isolates the real file (.mkv, .webm, or .mp4)
 
     # --- Processing Layer 1: Audio Extract via native FFmpeg ---
     with st.spinner("Extracting audio stream track..."):
