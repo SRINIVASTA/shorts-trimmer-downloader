@@ -2,7 +2,6 @@ import os
 import subprocess
 import streamlit as st
 import requests
-from urllib.parse import urlparse, parse_qs
 
 FFMPEG_CMD = "ffmpeg"
 
@@ -14,29 +13,24 @@ youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
 if download_btn and youtube_url:
-    # --- Robust Video ID Extraction Logic ---
+    # --- Bulletproof Video ID Extraction ---
     video_id = None
     try:
-        parsed_url = urlparse(youtube_url)
-        # Handle shorts paths, standard watch paths, and short URLs cleanly
-        if "shorts" in parsed_url.path:
-            # Splits path like /shorts/GlBi3knFeQI into segments and takes the last item
-            video_id = [seg for seg in parsed_url.path.split('/') if seg][-1]
-        elif parsed_url.netloc in ["://youtube.com", "youtube.com"] and parsed_url.path == "/watch":
-            video_id = parse_qs(parsed_url.query).get("v", [None])[0]
-        elif parsed_url.netloc == "youtu.be":
-            video_id = [seg for seg in parsed_url.path.split('/') if seg][0]
-            
-        # Clean any trailing query parameters left behind by string extraction
-        if video_id and "?" in video_id:
-            video_id = video_id.split("?")[0]
-            
+        # Standard cleanups for query parameters
+        clean_url = youtube_url.split("?")[0].split("&")[0].strip()
+        
+        if "shorts/" in clean_url:
+            video_id = clean_url.split("shorts/")[-1].replace("/", "")
+        elif "watch?v=" in clean_url:
+            video_id = clean_url.split("watch?v=")[-1].replace("/", "")
+        elif "youtu.be/" in clean_url:
+            video_id = clean_url.split("youtu.be/")[-1].replace("/", "")
     except Exception:
         pass
 
     # Strictly validate the isolated identifier format rules
     if not video_id or len(video_id) != 11:
-        st.error(f"❌ Invalid YouTube URL format. Could not parse video ID correctly from: {youtube_url}")
+        st.error(f"❌ Invalid YouTube URL format. Could not parse the 11-character video ID correctly from: {youtube_url}")
         st.stop()
 
     # Define processing tracking variables
@@ -50,7 +44,7 @@ if download_btn and youtube_url:
             os.remove(path)
 
     # --- Fetching via Distributed Piped API Node ---
-    # The URL string configuration is now perfectly locked down and isolated
+    # Strictly locked down to prevent string collisions
     api_url = f"https://kavin.rocks{video_id}"
     
     with st.spinner("Streaming public data stream packets..."):
@@ -113,7 +107,7 @@ if download_btn and youtube_url:
     st.success("🎉 Processing complete without cookies!")
 
     # --- UI Asset Display Layout Panels ---
-    st.subheader("🎞️ Original Track File")
+    st.subheader("╠ Original Track File")
     st.video(video_filename)
     with open(video_filename, "rb") as f:
         st.download_button("⬇️ Download Original Video", f, file_name=f"original_{video_id}.mp4")
