@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import streamlit as st
 import requests
@@ -13,20 +14,15 @@ youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
 if download_btn and youtube_url:
-    # --- Bulletproof Video ID Extraction ---
+    # --- Bulletproof Regex Video ID Extraction ---
     video_id = None
-    try:
-        # Standard cleanups for query parameters
-        clean_url = youtube_url.split("?")[0].split("&")[0].strip()
-        
-        if "shorts/" in clean_url:
-            video_id = clean_url.split("shorts/")[-1].replace("/", "")
-        elif "watch?v=" in clean_url:
-            video_id = clean_url.split("watch?v=")[-1].replace("/", "")
-        elif "youtu.be/" in clean_url:
-            video_id = clean_url.split("youtu.be/")[-1].replace("/", "")
-    except Exception:
-        pass
+    
+    # Matches the exact 11 characters of any standard YouTube ID format
+    regex_pattern = r"(?:v=|\/v\/|youtu\.be\/|\/shorts\/|^)([a-zA-Z0-9_-]{11})"
+    match = re.search(regex_pattern, youtube_url)
+    
+    if match:
+        video_id = match.group(1)
 
     # Strictly validate the isolated identifier format rules
     if not video_id or len(video_id) != 11:
@@ -44,7 +40,6 @@ if download_btn and youtube_url:
             os.remove(path)
 
     # --- Fetching via Distributed Piped API Node ---
-    # Strictly locked down to prevent string collisions
     api_url = f"https://kavin.rocks{video_id}"
     
     with st.spinner("Streaming public data stream packets..."):
@@ -107,7 +102,7 @@ if download_btn and youtube_url:
     st.success("🎉 Processing complete without cookies!")
 
     # --- UI Asset Display Layout Panels ---
-    st.subheader("╠ Original Track File")
+    st.subheader("🎞️ Original Track File")
     st.video(video_filename)
     with open(video_filename, "rb") as f:
         st.download_button("⬇️ Download Original Video", f, file_name=f"original_{video_id}.mp4")
