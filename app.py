@@ -39,9 +39,9 @@ if download_btn and youtube_url:
             os.remove(path)
 
     # --- Consolidated yt-dlp Configuration Block ---
-    # This bypasses blocks natively without third-party web scraper tools
+    # FIX: Uses 'best' to correctly download the pre-merged single video track of the Short
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best',
         'merge_output_format': 'mp4',
         'outtmpl': video_filename,
         'geo_bypass': True,
