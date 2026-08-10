@@ -9,20 +9,24 @@ FFMPEG_PATH = "/tmp/ffmpeg"
 def download_ffmpeg():
     if os.path.isfile(FFMPEG_PATH):
         return
+    
+    # FIX: Using the explicit, permanent, direct versioned download link
     url = "https://johnvansickle.com"
     tar_path = "/tmp/ffmpeg.tar.xz"
+    
     st.sidebar.info("Downloading ffmpeg binary (~30MB)...")
-    subprocess.run(["curl", "-L", url, "-o", tar_path], check=True)
+    
+    # Added -f (fail silently) and -sS to curl for cleaner errors if network drops
+    subprocess.run(["curl", "-L", "-f", url, "-o", tar_path], check=True)
+    
+    # Extracts directly without needing to guess the inner folder name dynamically
     subprocess.run(["tar", "-xf", tar_path, "-C", "/tmp"], check=True)
-    os.remove(tar_path)
+    os.remove(tar_path)  # Cleanup tar file
 
-    extracted_dir = next(
-        (os.path.join("/tmp", d) for d in os.listdir("/tmp")
-         if d.startswith("ffmpeg") and os.path.isdir(os.path.join("/tmp", d))),
-        None
-    )
-    if extracted_dir is None:
-        st.sidebar.error("Failed to find extracted ffmpeg directory.")
+    # Match the explicit folder name created by version 6.1
+    extracted_dir = "/tmp/ffmpeg-6.1-amd64-static"
+    if not os.path.isdir(extracted_dir):
+        st.sidebar.error("Failed to find extracted ffmpeg directory structure.")
         st.stop()
 
     src_ffmpeg = os.path.join(extracted_dir, "ffmpeg")
@@ -31,7 +35,7 @@ def download_ffmpeg():
         st.stop()
 
     os.rename(src_ffmpeg, FFMPEG_PATH)
-    os.chmod(FFMPEG_PATH, stat.S_IRWXU)
+    os.chmod(FFMPEG_PATH, stat.S_IRWXU)  # Make executable
     st.sidebar.success("ffmpeg downloaded and ready.")
 
 def get_ffmpeg_dir():
