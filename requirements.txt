@@ -1,3 +1,2 @@
 streamlit
-yt-dlp
 requests
