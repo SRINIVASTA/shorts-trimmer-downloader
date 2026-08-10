@@ -12,7 +12,7 @@ st.set_page_config(page_title="Shorts Downloader", layout="centered")
 st.title("▶ YouTube Shorts Downloader")
 st.caption("Production-Ready Streamlit Cloud Native Architecture")
 
-# Workspace Controls
+# Simple Web Workspace Input Control
 youtube_url = st.text_input("Enter Your YouTube Shorts URL:")
 download_btn = st.button("Download & Process Video")
 
@@ -29,7 +29,18 @@ if download_btn and youtube_url:
         st.error("❌ Invalid YouTube URL format. Could not parse video ID.")
         st.stop()
 
-    # Pre-clean matching files in directory to prevent container permission locks
+    # Create a temporary file path to handle your hidden secrets securely
+    cookie_path = "/tmp/app_cookies.txt"
+    
+    # Reads the credentials you pasted into the Streamlit Web Settings panel
+    if "YOUTUBE_COOKIES" in st.secrets:
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(st.secrets["YOUTUBE_COOKIES"])
+    else:
+        st.error("❌ **Configuration Error:** Please add your exported `cookies.txt` content to your Streamlit App Secrets under the key `YOUTUBE_COOKIES` in your Streamlit web dashboard.")
+        st.stop()
+
+    # Pre-clean matching files in directory to prevent container conflicts
     for old_file in glob.glob(f"/tmp/{video_id}*"):
         try:
             os.remove(old_file)
@@ -42,14 +53,13 @@ if download_btn and youtube_url:
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
 
     # --- Robust yt-dlp Configuration Block ---
-    # FIX: Uses dynamic extensions to bypass format selection locks completely
     ydl_opts = {
         'outtmpl': base_download_tmpl,
         'geo_bypass': True,
         'quiet': True,
         'nocheckcertificate': True,
+        'cookiefile': cookie_path, # Automatically authenticates the cloud server via your secret tokens
         
-        # Pulls clean web interaction streams instead of restricted hardware streams
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'web_embedded', 'android_embed'],
@@ -63,24 +73,27 @@ if download_btn and youtube_url:
         }
     }
 
-    with st.spinner("Downloading raw video assets from YouTube..."):
+    with st.spinner("Authenticating cloud session and downloading video assets..."):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([youtube_url])
         except Exception as e:
             st.error(f"Download execution failed: {e}")
+            if os.path.exists(cookie_path):
+                os.remove(cookie_path)
             st.stop()
 
-    # --- Find the real downloaded video path dynamically ---
+    # Find the real downloaded video path dynamically
     downloaded_files = glob.glob(f"/tmp/{video_id}.*")
-    # Exclude any files we are about to create if they exist
     downloaded_files = [f for f in downloaded_files if not f.endswith(('_audio.mp3', '_cropped.mp4'))]
 
     if not downloaded_files:
-        st.error("❌ Media stream was dropped or could not be saved to storage disk.")
+        st.error("❌ Media stream was dropped or could not be saved to cloud disk storage.")
+        if os.path.exists(cookie_path):
+            os.remove(cookie_path)
         st.stop()
         
-    video_filename = downloaded_files[0] # This isolates the real file (.mkv, .webm, or .mp4)
+    video_filename = downloaded_files[0]
 
     # --- Processing Layer 1: Audio Extract via native FFmpeg ---
     with st.spinner("Extracting audio stream track..."):
@@ -104,7 +117,7 @@ if download_btn and youtube_url:
             st.error("Video cropping filter pipeline failed.")
             st.stop()
 
-    st.success("🎉 Processing complete!")
+    st.success("🎉 Processing complete inside the web container!")
 
     # --- UI Asset Display Layout Panels ---
     st.subheader("╠ Original Track File")
@@ -121,3 +134,7 @@ if download_btn and youtube_url:
     st.audio(audio_file)
     with open(audio_file, "rb") as f:
         st.download_button("⬇️ Download Audio Track", f, file_name=f"audio_{video_id}.mp3")
+
+    # Wipe temporary cookie storage file tracking for privacy safety
+    if os.path.exists(cookie_path):
+        os.remove(cookie_path)
