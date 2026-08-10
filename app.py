@@ -28,25 +28,25 @@ if download_btn and youtube_url:
         st.error("❌ Invalid YouTube URL format. Could not parse video ID.")
         st.stop()
 
-    # Define unique file names to completely avoid string concatenation bugs
+    # Define clean working absolute file paths 
     video_filename = f"/tmp/{video_id}.mp4"
     audio_file = f"/tmp/{video_id}_audio.mp3"
     cropped_video = f"/tmp/{video_id}_cropped.mp4"
 
-    # Clean working directory files
+    # Clean working directory files to prevent container permission locks
     for path in [video_filename, audio_file, cropped_video]:
         if os.path.exists(path):
             os.remove(path)
 
-    # --- Consolidated yt-dlp Configuration Block ---
-    # FIX: Uses 'best' to correctly download the pre-merged single video track of the Short
+    # --- Robust yt-dlp Configuration Block ---
+    # FIX: We drop format/merge constraints entirely to avoid the 'Format not available' trap.
     ydl_opts = {
-        'format': 'best',
-        'merge_output_format': 'mp4',
         'outtmpl': video_filename,
         'geo_bypass': True,
         'quiet': True,
+        'nocheckcertificate': True,
         
+        # Bypasses hardware restrictions safely by using default web-client handshakes
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'web_embedded', 'android_embed'],
@@ -60,13 +60,19 @@ if download_btn and youtube_url:
         }
     }
 
-    with st.spinner("Downloading video assets directly from YouTube..."):
+    with st.spinner("Downloading raw video assets from YouTube..."):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([youtube_url])
         except Exception as e:
             st.error(f"Download execution failed: {e}")
+            st.info("💡 Tip: If this continues, ensure your requirements.txt is up to date.")
             st.stop()
+
+    # Verify the video file actually downloaded before invoking FFmpeg
+    if not os.path.exists(video_filename):
+        st.error("❌ Media stream was dropped or could not be saved to storage disk.")
+        st.stop()
 
     # --- Processing Layer 1: Audio Extract via native FFmpeg ---
     with st.spinner("Extracting audio stream track..."):
@@ -93,7 +99,7 @@ if download_btn and youtube_url:
     st.success("🎉 Processing complete!")
 
     # --- UI Asset Display Layout Panels ---
-    st.subheader("🎞️ Original Track File")
+    st.subheader("╠ Original Track File")
     st.video(video_filename)
     with open(video_filename, "rb") as f:
         st.download_button("⬇️ Download Original Video", f, file_name=f"original_{video_id}.mp4")
