@@ -30,34 +30,36 @@ if download_btn and youtube_url:
     subtitle_tmpl = f"/tmp/{video_id}_sub"
 
     ydl_opts = {
-        # FIX 1: Use pre-combined web streams if independent streams trigger 403 errors
+        # FORCE fallback to standard web clients if bestvideo triggers a DRM-block rule
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'merge_output_format': 'mp4',
         'outtmpl': video_filename,
         'geo_bypass': True,
         'quiet': True,
         
-        # FIX 2: Download subtitles simultaneously within the exact same handshake
-        'writesubtitles': True,
-        'writeautomaticsub': True,
-        'subtitleslangs': ['en'],
         'outtmpl': {
             'default': video_filename,
             'subtitle': f"{subtitle_tmpl}.%(ext)s"
         },
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['en'],
 
-        # FIX 3: Force client arrays away from iOS spoofing engines which cause errors
+        # FIX: Force 'web' clients first and strictly remove TV/iOS clients 
+        # that trigger YouTube's experimental A/B DRM testing pathways.
         'extractor_args': {
             'youtube': {
-                'player_client': ['web_embedded', 'web', 'tv']
+                'player_client': ['web', 'web_embedded', 'android_embed'],
+                'skip': ['dash', 'hls']  # Skip chunks prone to dynamic token blocks
             }
         },
         
-        # FIX 4: Replicate standard browser headers
+        # Emulate standard browser interactions
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
         }
     }
 
